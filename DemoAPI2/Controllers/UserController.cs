@@ -1,7 +1,10 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using DemoAPI2.Models;
-
+using System.Security.Cryptography;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace DemoAPI2.Controllers
 {
@@ -10,55 +13,81 @@ namespace DemoAPI2.Controllers
     public class UserController : ControllerBase
     {
         private readonly DataContext _context;
-        public UserController(DataContext context)
+        private readonly IConfiguration _configuration;
+        public UserController(DataContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
         [HttpGet]
-        public async Task<ActionResult<List<User>>> Get()
+        public async Task<ActionResult<User[]>> GetAll()
         {
             return Ok(await _context.Users.ToListAsync());
         }
-        [HttpGet("{id}")]
-        public async Task<ActionResult<User>> GetById(int id)
+        [HttpPost("login")]
+        public async Task<ActionResult<string>> Login(UserDTO request)
         {
-            var user = await _context.Users.FindAsync(id);
-            if (user == null)
+            var checkUser = await _context.Users.FirstOrDefaultAsync(x => request.Username == x.Username);
+            if (checkUser == null)
             {
-                return NotFound("Not found");
+                return NotFound("User does not exist");
             }
-            return Ok(user);
+            if (!VerifyPassword(request.Password, checkUser.PasswordHash, checkUser.PasswordSalt))
+            {
+                return BadRequest("Wrong password");
+            }
+            string token = CreateToken(checkUser);
+            return Ok(new {username = checkUser.Username, token = token});
         }
-        [HttpPost]
-        public async Task<ActionResult<User>> Register(User user)
+        [HttpPost("register")]
+        public async Task<ActionResult> Register(UserDTO request)
         {
+            var checkUser = await _context.Users.FirstOrDefaultAsync(x => request.Username == x.Username);
+            if (checkUser != null)
+            {
+                return BadRequest("User already exists");
+            }
+            CreateHashPassword(request.Password, out byte[] passwordHash, out byte[] passwordSalt);
+            var user = new User();
+            user.Username = request.Username;
+            user.PasswordHash = passwordHash;
+            user.PasswordSalt = passwordSalt;
             _context.Users.Add(user);
-            await _context.SaveChangesAsync();
+            _context.SaveChanges();
             return Ok(user);
         }
-        [HttpPut]
-        public async Task<ActionResult<List<User>>> UpdatePassword(User request)
+        private void CreateHashPassword(string password, out byte[] passwordHash, out byte[] passwordSalt)
         {
-            var dbUser = await _context.Users.FindAsync(request.Id);
-            if (dbUser == null)
+            using (var hmac = new HMACSHA256())
             {
-                return NotFound("Not found");
+                passwordSalt = hmac.Key;
+                passwordHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
             }
-            dbUser.Password = request.Password;
-            await _context.SaveChangesAsync();
-            return Ok(dbUser);
         }
-        [HttpDelete]
-        public async Task<ActionResult> DeleteUser(int id)
+        private bool VerifyPassword(string password, byte[] passwordHash, byte[] passwordSalt)
         {
-            var product = await _context.Products.FindAsync(id);
-            if (product == null)
+            using (var hmac = new HMACSHA256(passwordSalt))
             {
-                return NotFound("Not found");
+                var computeHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+                return computeHash.SequenceEqual(passwordHash);
             }
-            _context.Products.Remove(product);
-            await _context.SaveChangesAsync();
-            return Ok("Deleted");
+        }
+        private string CreateToken(User user)
+        {
+            List<Claim> claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim("id", user.Id.ToString()),
+            };
+            var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings:Secret").Value));
+            var cred = new SigningCredentials(key, SecurityAlgorithms.HmacSha256Signature);
+            var token = new JwtSecurityToken(
+                claims: claims,
+                expires: DateTime.Now.AddDays(1),
+                signingCredentials: cred
+            );
+            var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+            return jwt;
         }
     }
 }
