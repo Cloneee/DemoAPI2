@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
 
 namespace DemoAPI2.Controllers
 {
@@ -20,9 +21,35 @@ namespace DemoAPI2.Controllers
             _configuration = configuration;
         }
         [HttpGet]
+        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<User[]>> GetAll()
         {
             return Ok(await _context.Users.ToListAsync());
+        }
+        [HttpPut]
+        public async Task<ActionResult<List<Product>>> UpdateProduct(UserDTO request)
+        {
+            var dbUser = _context.Users.Where(b => b.Username == request.Username).FirstOrDefault();
+            if (dbUser == null)
+            {
+                return NotFound("Not found");
+            }
+            CreateHashPassword(request.Password, out byte[] passwordHash, out byte[] passwordSalt);
+            dbUser.PasswordHash = passwordHash;
+            dbUser.PasswordSalt = passwordSalt;
+            await _context.SaveChangesAsync();
+            return Ok(dbUser);
+        }
+        [HttpDelete("{id}")]
+        public async Task<ActionResult> DeleteUser(int id){
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+            {
+                return NotFound("Not found");
+            }
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+            return Ok("Deleted");
         }
         [HttpPost("login")]
         public async Task<ActionResult<string>> Login(UserDTO request)
@@ -54,7 +81,7 @@ namespace DemoAPI2.Controllers
             user.PasswordSalt = passwordSalt;
             _context.Users.Add(user);
             _context.SaveChanges();
-            return Ok(user);
+            return Ok("Register successful");
         }
         private void CreateHashPassword(string password, out byte[] passwordHash, out byte[] passwordSalt)
         {
@@ -78,6 +105,7 @@ namespace DemoAPI2.Controllers
             {
                 new Claim(ClaimTypes.Name, user.Username),
                 new Claim("id", user.Id.ToString()),
+                new Claim(ClaimTypes.Role, user.Role)
             };
             var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings:Secret").Value));
             var cred = new SigningCredentials(key, SecurityAlgorithms.HmacSha256Signature);

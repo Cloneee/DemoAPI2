@@ -1,11 +1,13 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using DemoAPI2.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace DemoAPI2.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class ProductController : ControllerBase
     {
         private readonly DataContext _context;
@@ -14,10 +16,12 @@ namespace DemoAPI2.Controllers
             _context = context;
         }
         [HttpGet]
+        [AllowAnonymous]
         public async Task<ActionResult<List<Product>>> Get()
         {
             return Ok(await _context.Products.ToListAsync());
         }
+        [AllowAnonymous]
         [HttpGet("{id}")]
         public async Task<ActionResult<Product>> GetById(int id)
         {
@@ -29,11 +33,12 @@ namespace DemoAPI2.Controllers
             return Ok(product);
         }
         [HttpPost]
-        public async Task<ActionResult<List<Product>>> AddProduct(Product product)
+        public async Task<ActionResult<List<Product>>> AddProduct(ProductDTO product)
         {
-            _context.Products.Add(product);
+            var newProduct = new Product(product.Name, product.Description, product.Price);
+            _context.Products.Add(newProduct);
             await _context.SaveChangesAsync();
-            return Ok(product);
+            return Ok(newProduct);
         }
         [HttpPut]
         public async Task<ActionResult<List<Product>>> UpdateProduct(Product request)
