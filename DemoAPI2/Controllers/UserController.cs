@@ -26,20 +26,6 @@ namespace DemoAPI2.Controllers
         {
             return Ok(await _context.Users.ToListAsync());
         }
-        [HttpPut]
-        public async Task<ActionResult<List<Product>>> UpdateProduct(UserDTO request)
-        {
-            var dbUser = _context.Users.Where(b => b.Username == request.Username).FirstOrDefault();
-            if (dbUser == null)
-            {
-                return NotFound("Not found");
-            }
-            CreateHashPassword(request.Password, out byte[] passwordHash, out byte[] passwordSalt);
-            dbUser.PasswordHash = passwordHash;
-            dbUser.PasswordSalt = passwordSalt;
-            await _context.SaveChangesAsync();
-            return Ok(dbUser);
-        }
         [HttpDelete("{id}")]
         public async Task<ActionResult> DeleteUser(int id){
             var user = await _context.Users.FindAsync(id);
